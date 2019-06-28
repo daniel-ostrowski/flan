@@ -1,0 +1,28 @@
+Structure:
+
+The Blobs table holds named blobs of data, such as images, stylesheets, text
+content, etc. All data directly served by the server lives in this table.
+
+NamedBlob:
+- ID: String
+- Data: BLOB
+
+The Posts table holds metadata for every "post". A "post" is really just a page
+on your site. The NamedBlob pointed to by a post should be a text string
+holding HTML.
+
+Posts:
+- ID: String
+- PostedTime: DateTime
+- NamedBlobID: String
+
+A tag is a string that can be used to categorize a post.
+
+Tag:
+- ID : String
+
+A PostTag signifies that a given Post has a given Tag
+
+PostTags:
+- PostID: String
+- TagID: String

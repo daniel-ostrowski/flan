@@ -1,0 +1,19 @@
+{
+  "name": "flan",
+  "version": "1.0.0",
+  "description": "simple content delivery application that pulls all content from a SQLite database",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Daniel Ostrowski",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "bluebird": "^3.5.5",
+    "buffer-signature": "^1.1.0",
+    "express": "^4.17.1",
+    "file-type": "^12.0.0",
+    "sqlite3": "^4.0.9"
+  }
+}
