@@ -12,19 +12,36 @@ var NamedBlobRepository = require('./NamedBlobRepository');
 var dao = new DAO("flan.db");
 var namedBlobRepository = new NamedBlobRepository(dao);
 
-function handleBlobRequestGenerator(blobDataPreprocessor, blobDataPostprocessor, errorHandler) {
-    return function (req, res, blobID) {
-        namedBlobRepository.getByID(blobID).then(blob => {
-            if (blob) {
-                blobDataPreprocessor(blob["Data"]).then(blobData => blobDataPostprocessor(req, res, blobData)).catch(errorHandler);
+var blobRenderMethods = {};
+
+function handleBlobRequest(req, res, blobID) {
+    namedBlobRepository.getByID(blobID).then(blob => {
+        if (!blob) {
+            res.status(404);
+            res.type("text/plain");
+            res.send("Requested blob was not found!");
+        }
+        else {
+            console.log("Render method for " + blobID + " is " + blob["RenderMethod"]);
+    
+            var thisBlobsRenderMethod = blobRenderMethods[blob["RenderMethod"]];
+            if (thisBlobsRenderMethod === undefined) {
+                res.status(500);
+                res.type("text/plain");
+                res.send("The requested blob wants to be rendered via the '" + 
+                    blob["RenderMethod"] + "' handler, but no handler with that name has been registered");
             }
             else {
-                errorHandler(blobID);
-                res.type("text/plain");
-                res.send("Blob not found!");
+                thisBlobsRenderMethod(req, res, blob, blobID);
             }
-        }).catch(errorHandler);
-    }
+        }
+    });
+}
+
+function registerBlobRenderMethod(renderMethodName, blobDataPreprocessor, blobDataPostprocessor, errorHandler) {
+    blobRenderMethods[renderMethodName] = function (req, res, blob, blobID) {
+            blobDataPreprocessor(blob["Data"]).then(blobData => blobDataPostprocessor(req, res, blobData)).catch(errorHandler);
+    };
 }
 
 async function expandBlobText(blobText) {
@@ -113,16 +130,13 @@ app.get("/", (req, res) => {
     res.send("Welcome to FLAN!");
 });
 
-app.get("/blobs/:id", (req, res) => {
-    handleBlobRequestGenerator(identity, inferMimeTypeAndSendData, logError)(req, res, req.params.id);
-});
 
-app.get("/texts/:id", (req, res) => {
-    handleBlobRequestGenerator(renderBlobText, inferMimeTypeAndSendData, logError)(req, res, req.params.id);
-});
+registerBlobRenderMethod("blobs", identity, inferMimeTypeAndSendData, logError);
+registerBlobRenderMethod("texts", renderBlobText, inferMimeTypeAndSendData, logError);
+registerBlobRenderMethod("posts", renderBlobTextWithSqlData, inferMimeTypeAndSendData, logError);
 
-app.get("/posts/:id", (req, res) => {
-    handleBlobRequestGenerator(renderBlobTextWithSqlData, inferMimeTypeAndSendData, logError)(req, res, req.params.id);
+app.get("/:id", (req, res) => {
+    handleBlobRequest(req, res, req.params.id);
 })
 
 var server = https.createServer(options, app).listen(4443, function() {
