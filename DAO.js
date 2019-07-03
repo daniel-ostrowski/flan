@@ -9,9 +9,9 @@ class DAO {
         this.db = new sqlite3.Database(path);
     }
 
-    get(sql, args) {
+    generatePromise(func, sql, args) {
         return new Promise((resolve, reject) => {
-            this.db.get(sql, args, (err, result) => {
+            func((err, result) => {
                 if (err) {
                     reject(err);
                 }
@@ -21,6 +21,19 @@ class DAO {
             });
         });
     }
+
+    get(sql, args) {
+        return this.generatePromise((resultHandler) => this.db.get(sql, args, resultHandler));
+    }
+
+    all(sql, args) {
+        return this.generatePromise((resultHandler) => this.db.all(sql, args, resultHandler));
+    }
+
+    run(sql, args) {
+        return this.generatePromise((resultHandler) => this.db.run(sql, args, resultHandler));
+    }
+
 }
 
 module.exports = DAO;

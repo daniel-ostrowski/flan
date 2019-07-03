@@ -42,6 +42,23 @@ async function expandBlobText(blobText) {
     return blobText;
 }
 
+// Perform all the queries embedded within the blob text and return both an object 
+// containing all the query results, suitable for passing into the EJS render
+// function, and also return a copy of the blob text with all queries removed.
+async function performEmbeddedQueries(blobText) {
+    const queryRegex = /<%- *([A-Za-z_]*?) *= *executeSQL\('(.*?)'\) *%>/;
+    var templateData = {};
+    while (true) {
+        var matchData = blobText.match(queryRegex);
+        if (matchData === null || matchData.length !== 3) {
+            break;
+        }
+        templateData[matchData[1]] = await dao.all(matchData[2]);
+        blobText = blobText.replace(queryRegex, "");        
+    }
+    return [templateData, blobText];
+}
+
 // Blob data pre-processors
 
 async function identity(x) {
@@ -51,6 +68,12 @@ async function identity(x) {
 async function renderBlobText(blobText) {
     var expandedBlobText = await expandBlobText(blobText);
     return ejs.render(expandedBlobText).toString();
+}
+
+async function renderBlobTextWithSqlData(blobText) {
+    var expandedBlobText = await expandBlobText(blobText);
+    var templateDataAndBlobText = await performEmbeddedQueries(expandedBlobText);
+    return ejs.render(templateDataAndBlobText[1], templateDataAndBlobText[0]);
 }
 
 // Blob data post-processors
@@ -94,9 +117,13 @@ app.get("/blobs/:id", (req, res) => {
     handleBlobRequestGenerator(identity, inferMimeTypeAndSendData, logError)(req, res, req.params.id);
 });
 
-app.get("/posts/:id", (req, res) => {
+app.get("/texts/:id", (req, res) => {
     handleBlobRequestGenerator(renderBlobText, inferMimeTypeAndSendData, logError)(req, res, req.params.id);
 });
+
+app.get("/posts/:id", (req, res) => {
+    handleBlobRequestGenerator(renderBlobTextWithSqlData, inferMimeTypeAndSendData, logError)(req, res, req.params.id);
+})
 
 var server = https.createServer(options, app).listen(4443, function() {
     console.log("Server is now up.");
