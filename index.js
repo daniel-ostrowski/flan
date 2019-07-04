@@ -58,18 +58,38 @@ async function expandBlobText(blobText) {
     return blobText;
 }
 
+// Copy an object containing only string properties, converting any properties
+// to integers or floats whenever possible.
+function sanitizeParametersForSQL(params) {
+    var sanitizedParams = {};
+    for (var key in params) {
+        if (Number.isInteger(key)) {
+            sanitizedParams["$" + key] = Number.parseInt(params[key]);
+        }
+        else if (!Number.isNaN(key)) {
+            sanitizedParams["$" + key] = Number.parseFloat(params[key]);
+        }
+        else {
+            sanitizedParams["$" + key] = params[key];
+        }
+    }
+    return sanitizedParams;
+}
+
 // Perform all the queries embedded within the blob text and return both an object 
 // containing all the query results, suitable for passing into the EJS render
 // function, and also return a copy of the blob text with all queries removed.
-async function performEmbeddedQueries(blobText) {
+// Params is a dictionary of values that can be reference from within a query.
+async function performEmbeddedQueries(blobText, params) {
     const queryRegex = /<%- *([A-Za-z_]*?) *= *executeSQL\('(.*?)'\) *%>/;
+    var sanitizedParams = sanitizeParametersForSQL(params);
     var templateData = {};
     while (true) {
         var matchData = blobText.match(queryRegex);
         if (matchData === null || matchData.length !== 3) {
             break;
         }
-        templateData[matchData[1]] = await dao.all(matchData[2]);
+        templateData[matchData[1]] = await dao.all(matchData[2], sanitizedParams);
         blobText = blobText.replace(queryRegex, "");        
     }
     return [templateData, blobText];
@@ -88,7 +108,7 @@ async function renderBlobText(blobText, queryParams) {
 
 async function renderBlobTextWithSqlData(blobText, queryParams) {
     var expandedBlobText = await expandBlobText(blobText);
-    var templateDataAndBlobText = await performEmbeddedQueries(expandedBlobText);
+    var templateDataAndBlobText = await performEmbeddedQueries(expandedBlobText, queryParams);
     templateDataAndBlobText[0]["query"] = queryParams;
     return ejs.render(templateDataAndBlobText[1], templateDataAndBlobText[0]);
 }
