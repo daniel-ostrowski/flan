@@ -14,7 +14,8 @@ var namedBlobRepository = new NamedBlobRepository(dao);
 
 var blobRenderMethods = {};
 
-function handleBlobRequest(req, res, blobID) {
+function handleBlobRequest(req, res) {
+    const blobID = req.params.id;
     namedBlobRepository.getByID(blobID).then(blob => {
         if (!blob) {
             res.status(404);
@@ -22,8 +23,6 @@ function handleBlobRequest(req, res, blobID) {
             res.send("Requested blob was not found!");
         }
         else {
-            console.log("Render method for " + blobID + " is " + blob["RenderMethod"]);
-    
             var thisBlobsRenderMethod = blobRenderMethods[blob["RenderMethod"]];
             if (thisBlobsRenderMethod === undefined) {
                 res.status(500);
@@ -40,7 +39,7 @@ function handleBlobRequest(req, res, blobID) {
 
 function registerBlobRenderMethod(renderMethodName, blobDataPreprocessor, blobDataPostprocessor, errorHandler) {
     blobRenderMethods[renderMethodName] = function (req, res, blob, blobID) {
-            blobDataPreprocessor(blob["Data"]).then(blobData => blobDataPostprocessor(req, res, blobData)).catch(errorHandler);
+            blobDataPreprocessor(blob["Data"], req.query).then(blobData => blobDataPostprocessor(req, res, blobData)).catch(errorHandler);
     };
 }
 
@@ -78,18 +77,19 @@ async function performEmbeddedQueries(blobText) {
 
 // Blob data pre-processors
 
-async function identity(x) {
+async function identity(x, queryParams) {
     return x;
 }
 
-async function renderBlobText(blobText) {
+async function renderBlobText(blobText, queryParams) {
     var expandedBlobText = await expandBlobText(blobText);
-    return ejs.render(expandedBlobText).toString();
+    return ejs.render(expandedBlobText, {query: queryParams}).toString();
 }
 
-async function renderBlobTextWithSqlData(blobText) {
+async function renderBlobTextWithSqlData(blobText, queryParams) {
     var expandedBlobText = await expandBlobText(blobText);
     var templateDataAndBlobText = await performEmbeddedQueries(expandedBlobText);
+    templateDataAndBlobText[0]["query"] = queryParams;
     return ejs.render(templateDataAndBlobText[1], templateDataAndBlobText[0]);
 }
 
@@ -105,6 +105,10 @@ async function inferMimeTypeAndSendData(req, res, blobData) {
     var mimeTypeGuessTwo = identifyBuffer(buffer)["mimeType"];
     // Prefer file-type's guess of the mime type.
     var mimeType = mimeTypeGuessOne || mimeTypeGuessTwo;
+    // If mime type was not inferred, default to HTML.
+    if (mimeType === "application/octet-stream") {
+        mimeType = "text/html";
+    }
     res.contentType(mimeType);
     res.send(buffer);
 }
@@ -136,7 +140,7 @@ registerBlobRenderMethod("texts", renderBlobText, inferMimeTypeAndSendData, logE
 registerBlobRenderMethod("posts", renderBlobTextWithSqlData, inferMimeTypeAndSendData, logError);
 
 app.get("/:id", (req, res) => {
-    handleBlobRequest(req, res, req.params.id);
+    handleBlobRequest(req, res);
 })
 
 var server = https.createServer(options, app).listen(4443, function() {
