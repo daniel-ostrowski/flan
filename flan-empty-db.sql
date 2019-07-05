@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS "NamedBlobs" (
 	"ID"	TEXT NOT NULL UNIQUE,
 	"Data"	BLOB,
 	"RenderMethod"	TEXT NOT NULL,
+	"MimeType"	TEXT,
 	PRIMARY KEY("ID")
 );
 DROP TABLE IF EXISTS "Tags";

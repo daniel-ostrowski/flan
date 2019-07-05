@@ -39,7 +39,7 @@ function handleBlobRequest(req, res) {
 
 function registerBlobRenderMethod(renderMethodName, blobDataPreprocessor, blobDataPostprocessor, errorHandler) {
     blobRenderMethods[renderMethodName] = function (req, res, blob, blobID) {
-            blobDataPreprocessor(blob["Data"], req.query).then(blobData => blobDataPostprocessor(req, res, blobData)).catch(errorHandler);
+            blobDataPreprocessor(blob, req.query).then(blobData => blobDataPostprocessor(req, res, blobData, blob)).catch(errorHandler);
     };
 }
 
@@ -97,39 +97,42 @@ async function performEmbeddedQueries(blobText, params) {
 
 // Blob data pre-processors
 
-async function identity(x, queryParams) {
-    return x;
+async function identity(blob, queryParams) {
+    return blob["Data"];
 }
 
-async function renderBlobText(blobText, queryParams) {
-    var expandedBlobText = await expandBlobText(blobText);
-    return ejs.render(expandedBlobText, {query: queryParams}).toString();
+async function renderBlobText(blob, queryParams) {
+    var expandedBlobText = await expandBlobText(blob["Data"]);
+    return ejs.render(expandedBlobText, {query: queryParams, blob: blob}).toString();
 }
 
-async function renderBlobTextWithSqlData(blobText, queryParams) {
-    var expandedBlobText = await expandBlobText(blobText);
+async function renderBlobTextWithSqlData(blob, queryParams) {
+    var expandedBlobText = await expandBlobText(blob["Data"]);
     var templateDataAndBlobText = await performEmbeddedQueries(expandedBlobText, queryParams);
     templateDataAndBlobText[0]["query"] = queryParams;
+    templateDataAndBlobText[0]["blob"] = blob;
     return ejs.render(templateDataAndBlobText[1], templateDataAndBlobText[0]);
 }
 
 // Blob data post-processors
 
-async function inferMimeTypeAndSendData(req, res, blobData) {
+async function inferMimeTypeAndSendData(req, res, blobData, blob) {
     var buffer = Buffer.from(blobData);
-    // file-type only returns an object with a mime property if it 
-    // could determine a mime type confidently
-    var mimeTypeGuessOne = fileType(buffer);
-    mimeTypeGuessOne = mimeTypeGuessOne && mimeTypeGuessOne["mime"];
-    // buffer-signature always returns an object with a mime property
-    var mimeTypeGuessTwo = identifyBuffer(buffer)["mimeType"];
-    // Prefer file-type's guess of the mime type.
-    var mimeType = mimeTypeGuessOne || mimeTypeGuessTwo;
-    // If mime type was not inferred, default to HTML.
-    if (mimeType === "application/octet-stream") {
-        mimeType = "text/html";
+    console.log(blob["MimeType"]);
+    if (blob["MimeType"]) {
+        res.contentType(blob["MimeType"]);
     }
-    res.contentType(mimeType);
+    else {
+        // file-type only returns an object with a mime property if it 
+        // could determine a mime type confidently
+        var mimeTypeGuessOne = fileType(buffer);
+        mimeTypeGuessOne = mimeTypeGuessOne && mimeTypeGuessOne["mime"];
+        // buffer-signature always returns an object with a mime property
+        var mimeTypeGuessTwo = identifyBuffer(buffer)["mimeType"];
+        // Prefer file-type's guess of the mime type.
+        var mimeType = mimeTypeGuessOne || mimeTypeGuessTwo;
+        res.contentType(mimeType);
+    }
     res.send(buffer);
 }
 
