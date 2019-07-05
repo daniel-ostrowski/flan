@@ -39,12 +39,12 @@ function handleBlobRequest(req, res) {
 
 function registerBlobRenderMethod(renderMethodName, blobDataPreprocessor, blobDataPostprocessor, errorHandler) {
     blobRenderMethods[renderMethodName] = function (req, res, blob, blobID) {
-            blobDataPreprocessor(blob, req.query).then(blobData => blobDataPostprocessor(req, res, blobData, blob)).catch(errorHandler);
+            blobDataPreprocessor(blob, req.query, req, res).then(blobData => blobDataPostprocessor(req, res, blobData, blob)).catch(errorHandler);
     };
 }
 
 async function expandBlobText(blobText) {
-    const blobImportRegex = /<%- *includeBlob\('(.*?)'\) *%>/;
+    const blobImportRegex = /<%- *includeBlob\("(.*?)"\) *%>/;
     while (true) {
         var matchData = blobText.match(blobImportRegex);
         if (matchData === null || matchData.length !== 2) {
@@ -63,10 +63,10 @@ async function expandBlobText(blobText) {
 function sanitizeParametersForSQL(params) {
     var sanitizedParams = {};
     for (var key in params) {
-        if (Number.isInteger(key)) {
+        if (Number.isInteger(params[key])) {
             sanitizedParams["$" + key] = Number.parseInt(params[key]);
         }
-        else if (!Number.isNaN(key)) {
+        else if (!Number.isNaN(Number.parseFloat(params[key]))) {
             sanitizedParams["$" + key] = Number.parseFloat(params[key]);
         }
         else {
@@ -80,8 +80,11 @@ function sanitizeParametersForSQL(params) {
 // containing all the query results, suitable for passing into the EJS render
 // function, and also return a copy of the blob text with all queries removed.
 // Params is a dictionary of values that can be reference from within a query.
-async function performEmbeddedQueries(blobText, params) {
-    const queryRegex = /<%- *([A-Za-z_]*?) *= *executeSQL\('(.*?)'\) *%>/;
+async function performEmbeddedQueries(blobText, params, req) {
+    const queryRegex = /<%- *([A-Za-z_]*?) *= *executeSQL\("(.*?)"\) *%>/;
+    for (var reqProperty in req) {
+        params["req_" + reqProperty] = (req[reqProperty] && req[reqProperty].toString ? req[reqProperty].toString() :  "");
+    }
     var sanitizedParams = sanitizeParametersForSQL(params);
     var templateData = {};
     while (true) {
@@ -89,28 +92,46 @@ async function performEmbeddedQueries(blobText, params) {
         if (matchData === null || matchData.length !== 3) {
             break;
         }
-        templateData[matchData[1]] = await dao.all(matchData[2], sanitizedParams);
+        const query = matchData[2];
+        // sqlite gives a "SQLITE_RANGE" error when given SQL parameters that 
+        // are not referenced
+        var referencedParams = {};
+        for (var param in sanitizedParams) {
+            // This check to see if a param is used is not truly robust but is
+            // sufficient for flan's intended use cases.
+            if (query.includes(param)) {
+                referencedParams[param] = sanitizedParams[param];
+            }
+        }
+        templateData[matchData[1]] = await dao.all(query, referencedParams);
         blobText = blobText.replace(queryRegex, "");        
     }
     return [templateData, blobText];
 }
 
+function stuffEjsTemplateData(data, blob, queryParams, req, res) {
+    data["blob"] = blob;
+    data["query"] = queryParams;
+    data["req"] = req;
+    data["res"] = res;
+    return data;
+}
+
 // Blob data pre-processors
 
-async function identity(blob, queryParams) {
+async function identity(blob, queryParams, req, res) {
     return blob["Data"];
 }
 
-async function renderBlobText(blob, queryParams) {
+async function renderBlobText(blob, queryParams, req, res) {
     var expandedBlobText = await expandBlobText(blob["Data"]);
-    return ejs.render(expandedBlobText, {query: queryParams, blob: blob}).toString();
+    return ejs.render(expandedBlobText, stuffEjsTemplateData({}, blob, queryParams, req, res)).toString();
 }
 
-async function renderBlobTextWithSqlData(blob, queryParams) {
+async function renderBlobTextWithSqlData(blob, queryParams, req, res) {
     var expandedBlobText = await expandBlobText(blob["Data"]);
-    var templateDataAndBlobText = await performEmbeddedQueries(expandedBlobText, queryParams);
-    templateDataAndBlobText[0]["query"] = queryParams;
-    templateDataAndBlobText[0]["blob"] = blob;
+    var templateDataAndBlobText = await performEmbeddedQueries(expandedBlobText, queryParams, req);
+    stuffEjsTemplateData(templateDataAndBlobText[0], blob, queryParams, req, res);
     return ejs.render(templateDataAndBlobText[1], templateDataAndBlobText[0]);
 }
 
@@ -118,9 +139,9 @@ async function renderBlobTextWithSqlData(blob, queryParams) {
 
 async function inferMimeTypeAndSendData(req, res, blobData, blob) {
     var buffer = Buffer.from(blobData);
-    console.log(blob["MimeType"]);
     if (blob["MimeType"]) {
         res.contentType(blob["MimeType"]);
+        console.log(blob["ID"] + " - " + blob["MimeType"]);
     }
     else {
         // file-type only returns an object with a mime property if it 
