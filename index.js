@@ -175,14 +175,14 @@ var options = {
     key: fs.readFileSync('../privkey.pem', 'utf8'),
 };
 
-app.get("/", (req, res) => {
-    res.send("Welcome to FLAN!");
-});
-
-
 registerBlobRenderMethod("blobs", identity, inferMimeTypeAndSendData, logError);
 registerBlobRenderMethod("texts", renderBlobText, inferMimeTypeAndSendData, logError);
 registerBlobRenderMethod("posts", renderBlobTextWithSqlData, inferMimeTypeAndSendData, logError);
+
+app.get("/", (req, res) => {
+    req.params.id = "/";
+    handleBlobRequest(req, res);
+})
 
 app.get("/:id", (req, res) => {
     handleBlobRequest(req, res);
