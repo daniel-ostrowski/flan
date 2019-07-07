@@ -80,8 +80,9 @@ function sanitizeParametersForSQL(params) {
 // containing all the query results, suitable for passing into the EJS render
 // function, and also return a copy of the blob text with all queries removed.
 // Params is a dictionary of values that can be reference from within a query.
-async function performEmbeddedQueries(blobText, params, req) {
+async function performEmbeddedQueries(blobText, params, req, blobID) {
     const queryRegex = /<%- *([A-Za-z_]*?) *= *executeSQL\("(.*?)"\) *%>/;
+    params["blobID"] = blobID;
     for (var reqProperty in req) {
         params["req_" + reqProperty] = (req[reqProperty] && req[reqProperty].toString ? req[reqProperty].toString() :  "");
     }
@@ -130,7 +131,7 @@ async function renderBlobText(blob, queryParams, req, res) {
 
 async function renderBlobTextWithSqlData(blob, queryParams, req, res) {
     var expandedBlobText = await expandBlobText(blob["Data"]);
-    var templateDataAndBlobText = await performEmbeddedQueries(expandedBlobText, queryParams, req);
+    var templateDataAndBlobText = await performEmbeddedQueries(expandedBlobText, queryParams, req, blob["ID"]);
     stuffEjsTemplateData(templateDataAndBlobText[0], blob, queryParams, req, res);
     return ejs.render(templateDataAndBlobText[1], templateDataAndBlobText[0]);
 }

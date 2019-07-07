@@ -1,3 +1,4 @@
 node_modules/**/
 flan.db*
 package-lock.json
+*scss*
